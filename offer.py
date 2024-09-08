@@ -1,9 +1,9 @@
-import numpy as np
+from flask import Flask, request, jsonify
 import pandas as pd
 
-# Step 1: Define the Risks List
-# -----------------------------
+app = Flask(__name__)
 
+# Step 1: Define the Risks List
 RISKS_LIST = [
     "Cancer", "Dermatological", "Endocrine", "Gastrointestinal", "Cardiovascular", 
     "Infectious Disease", "Immunological", "Kidney", "Hematological", "Musculoskeletal", 
@@ -12,15 +12,7 @@ RISKS_LIST = [
 ]
 
 # Step 2: Function to Calculate Engagement Score
-# ----------------------------------------------
-
 def calculate_engagement_score(visits, treatment_type, feedback_score):
-    """
-    Calculate the engagement score based on:
-    - Number of visits
-    - Type of treatment
-    - Patient's feedback score
-    """
     treatment_weight = {
         "Cancer": 1.5, "Dermatological": 1.2, "Endocrine": 1.3, "Gastrointestinal": 1.4, 
         "Cardiovascular": 1.5, "Infectious Disease": 1.1, "Immunological": 1.2, "Kidney": 1.4, 
@@ -33,12 +25,7 @@ def calculate_engagement_score(visits, treatment_type, feedback_score):
     return min(engagement_score, 100)  # Cap at 100
 
 # Step 3: Function to Dynamically Calculate Offer Amount
-# ------------------------------------------------------
-
 def calculate_offer_amount(engagement_score):
-    """
-    Calculate a dynamic offer percentage based on the engagement score.
-    """
     if engagement_score >= 90:
         return 30
     elif 70 <= engagement_score < 90:
@@ -49,13 +36,7 @@ def calculate_offer_amount(engagement_score):
         return 15
 
 # Step 4: Define Function to Generate Offer Paragraph
-# ----------------------------------------------------
-
 def generate_personalized_offer(patient_id, risk, engagement_score, patient_name):
-    """
-    Generate a personalized offer paragraph based on risk and engagement score.
-    """
-    # Offer details based on risk type
     offer_details = {
         "Cancer": "a complimentary cancer screening and a priority consultation with our oncologists",
         "Cardiovascular": "a free consultation with our leading cardiologist and a detailed heart health assessment",
@@ -79,13 +60,9 @@ def generate_personalized_offer(patient_id, risk, engagement_score, patient_name
         "Otolaryngological": "a thorough ear, nose, and throat evaluation"
     }
     
-    # Calculate dynamic offer percentage
     offer_percentage = calculate_offer_amount(engagement_score)
-    
-    # Select offer content
     offer_content = offer_details.get(risk, "an exclusive health check-up package tailored to your needs.")
     
-    # Personalized statement based on engagement score
     if engagement_score >= 90:
         personalized_statement = f"We are impressed with your dedication to maintaining your health."
     elif 70 <= engagement_score < 90:
@@ -95,7 +72,6 @@ def generate_personalized_offer(patient_id, risk, engagement_score, patient_name
     else:
         personalized_statement = f"Taking proactive steps in your health management is crucial."
     
-    # Create the personalized offer paragraph
     offer_paragraph = (
         f"Dear {patient_name} (Patient ID: {patient_id}),\n\n"
         f"After a thorough review of your recent visits and medical history, we have identified a potential health concern related to {risk}. "
@@ -110,29 +86,27 @@ def generate_personalized_offer(patient_id, risk, engagement_score, patient_name
     
     return offer_paragraph
 
-# Step 5: Example Usage
-# ---------------------
+# Step 5: Define Flask Routes
+@app.route('/generate_offer', methods=['POST'])
+def generate_offer():
+    data = request.json
+    df_patients = pd.DataFrame(data)
+    
+    # Validate data
+    if not all(col in df_patients.columns for col in ['patient_id', 'patient_name', 'risk', 'visits', 'feedback_score']):
+        return jsonify({"error": "Missing required fields in the input data"}), 400
+    
+    # Calculate engagement scores for each patient
+    df_patients['engagement_score'] = df_patients.apply(
+        lambda x: calculate_engagement_score(x['visits'], x['risk'], x['feedback_score']), axis=1)
+    
+    # Generate personalized offers
+    df_patients['personalized_offer'] = df_patients.apply(
+        lambda x: generate_personalized_offer(x['patient_id'], x['risk'], x['engagement_score'], x['patient_name']), axis=1)
+    
+    # Prepare response
+    offers = df_patients[['patient_id', 'patient_name', 'risk', 'engagement_score', 'personalized_offer']]
+    return offers.to_json(orient='records')
 
-# Generate some dummy data
-patients_data = {
-    'patient_id': [101, 102, 103],
-    'patient_name': ["John Doe", "Jane Smith", "Alex Johnson"],
-    'risk': ["Cardiovascular", "Neurology", "Cancer"],
-    'visits': [5, 8, 3],
-    'feedback_score': [80, 70, 90]
-}
-
-df_patients = pd.DataFrame(patients_data)
-
-# Calculate engagement scores for each patient
-df_patients['engagement_score'] = df_patients.apply(
-    lambda x: calculate_engagement_score(x['visits'], x['risk'], x['feedback_score']), axis=1)
-
-# Generate personalized offers
-df_patients['personalized_offer'] = df_patients.apply(
-    lambda x: generate_personalized_offer(x['patient_id'], x['risk'], x['engagement_score'], x['patient_name']), axis=1)
-
-# Display the personalized offers
-for offer in df_patients['personalized_offer']:
-    print(offer)
-    print("\n" + "="*80 + "\n")
+if __name__ == '__main__':
+    app.run(debug=True)
